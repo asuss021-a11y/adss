@@ -1,0 +1,85 @@
+name: Build Unsigned iOS IPA
+
+on:
+  # 支持在 GitHub 网页端手动点击运行
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: 1. 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 2. 安装 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 3. 安装依赖并同步工程
+        run: |
+          if [ -f "package.json" ]; then
+            npm install
+          fi
+          # 如果是 Capacitor 项目，自动同步 web 资源到 iOS
+          if [ -f "capacitor.config.json" ] || [ -f "capacitor.config.ts" ]; then
+            npx cap sync ios
+          fi
+          # 如果存在 Podfile，自动安装 CocoaPods 依赖
+          PODFILE=$(find . -maxdepth 3 -name "Podfile" | head -n 1)
+          if [ -n "$PODFILE" ]; then
+            cd "$(dirname "$PODFILE")" && pod install
+          fi
+
+      - name: 4. 无证书编译项目 (.app)
+        run: |
+          # 自动查找项目中的 .xcworkspace 或 .xcodeproj
+          WORKSPACE=$(find . -maxdepth 3 -name "*.xcworkspace" ! -path "*/*.xcodeproj/*" | head -n 1)
+          PROJECT=$(find . -maxdepth 3 -name "*.xcodeproj" | head -n 1)
+
+          if [ -n "$WORKSPACE" ]; then
+            SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" | awk '/Schemes:/{getline; print $1; exit}')
+            echo "使用 Workspace: $WORKSPACE, Scheme: $SCHEME"
+            xcodebuild -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath $RUNNER_TEMP/build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              clean build
+          elif [ -n "$PROJECT" ]; then
+            SCHEME=$(xcodebuild -list -project "$PROJECT" | awk '/Schemes:/{getline; print $1; exit}')
+            echo "使用 Project: $PROJECT, Scheme: $SCHEME"
+            xcodebuild -project "$PROJECT" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath $RUNNER_TEMP/build \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              clean build
+          else
+            echo "错误：未在仓库中找到 iOS 工程文件 (.xcworkspace 或 .xcodeproj)"
+            exit 1
+          fi
+
+      - name: 5. 封装为未签名 .ipa 文件
+        run: |
+          mkdir -p $RUNNER_TEMP/Payload
+          # 找到编译生成的 .app 文件夹并放入 Payload
+          APP_PATH=$(find $RUNNER_TEMP/build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" $RUNNER_TEMP/Payload/
+          
+          # 压缩 Payload 文件夹生成 .ipa
+          cd $RUNNER_TEMP
+          zip -r unsigned-app.ipa Payload
+
+      - name: 6. 上传 IPA 供下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-ios-ipa
+          path: ${{ runner.temp }}/unsigned-app.ipa
