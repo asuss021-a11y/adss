@@ -1,0 +1,24 @@
+{
+  "appId": "com.ttmc.adss",
+  "appName": "ADSS",
+  "webDir": "www",
+  "server": {
+    "url": "https://ttmc.cc",
+    "cleartext": true,
+    "allowNavigation": [
+      "www.ttmc.cc",
+      "*.ttmc.cc"
+    ]
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#ffffff",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_CROP",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
+  }
+}
